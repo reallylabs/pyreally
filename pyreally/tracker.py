@@ -6,7 +6,7 @@ from threading import Timer, Event
 import time
 import websocket
 from .responses import Pong
-from .exceptions import OperationError
+from .exceptions import parse_error
 from .responses import Error
 from concurrent.futures import Future
 
@@ -22,17 +22,18 @@ class ReallyTracker(object):
 
 
     def heartbeat(self):
-        tag = self._really._gen_tag()
-        ping = {
-            "tag": tag,
-            "cmd": "ping",
-        }
-        future = Future()
-        future.add_done_callback(self._heartbeat_callback)
-        self.register_future(tag, Pong, future)
-        logging.debug("Sending out a heartbeat")
-        self._really._raw_send(ping)
-        self._set_heartbeat_timer()
+        if self._running_evt.is_set():
+            tag = self._really._gen_tag()
+            ping = {
+                "tag": tag,
+                "cmd": "ping",
+            }
+            future = Future()
+            future.add_done_callback(self._heartbeat_callback)
+            self.register_future(tag, Pong, future)
+            logging.debug("Sending out a heartbeat")
+            self._really._raw_send(ping)
+            self._set_heartbeat_timer()
 
     def _set_heartbeat_timer(self):
         self._heartbeat_timer = Timer(self._heartbeat_period, self.heartbeat).start()
@@ -63,7 +64,7 @@ class ReallyTracker(object):
                     try:
                         logging.debug("Request with tag %s fulfilled in %0.3fs", tag, t2 - t1)
                         if 'error' in response and response['error'] != None:
-                            future.set_exception(OperationError(Error(response['error']), response.get('r')))
+                            future.set_exception(parse_error(Error(response['error']), response.get('r')))
                         future.set_result(klass(response))
                     except Exception as e:
                         logging.warning("Exception happened while calling the request callback: %s", e)

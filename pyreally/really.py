@@ -13,15 +13,13 @@ import collections
 import socket
 import exceptions
 from .tracker import ReallyTracker
-from .responses import GetResponse
+from .responses import GetResponse, ReadResponse, CreateResponse, Response
 from .r import R
 from concurrent.futures import Future
 
 REALLY_STATE_DISCONNECTED = "disconnected"
 REALLY_STATE_ONLINE = "online"
 REALLY_PROTOCOL_VERSION = "0.1"
-
-logging.basicConfig(level=logging.DEBUG)
 
 class Really(object):
     def __init__(self, server_host="localhost", server_port=9000, ssl=False):
@@ -121,17 +119,55 @@ class Really(object):
         self._tracker_thread.join()
 
     # CRUD API
-    def get(self, r, fields=None, on_change=None):
+    def get(self, r, fields=None):
         if not self.is_online():
             raise exceptions.DisconnectedException("Really is currently offline")
         if not isinstance(r, (str, R)):
             raise TypeError("r must be a string or an instance of class pyreally.R")
-        subscribe = on_change is not None
         tag = self._gen_tag()
-        req = self._protocol.get_message(tag, r, fields, subscribe)
+        req = self._protocol.get_message(tag, r, fields)
         future = Future()
         self._tracker.register_future(tag, GetResponse, future)
-        logging.debug("Sending GET request on (%r) with tag %s", r, tag)
         self._raw_send(req)
-        logging.info("GET request sent: %s", req)
+        logging.debug("GET request sent: %s", req)
+        return future
+
+    def query(self, r, query=None, query_args=None, fields=None, ascending=None, limit=None, pagination_token=None, skip=None, include_total=None):
+        if not self.is_online():
+            raise exceptions.DisconnectedException("Really is currently offline")
+        if not isinstance(r, (str, R)):
+            raise TypeError("r must be a string or an instance of class pyreally.R")
+        tag = self._gen_tag()
+        req = self._protocol.query_message(tag, r, query, query_args, fields, ascending, limit, pagination_token, skip, include_total)
+
+        future = Future()
+        self._tracker.register_future(tag, ReadResponse, future)
+        self._raw_send(req)
+        logging.debug("READ request sent: %s", req)
+        return future
+
+    def create(self, r, body):
+        if not self.is_online():
+            raise exceptions.DisconnectedException("Really is currently offline")
+        if not isinstance(r, (str, R)):
+            raise TypeError("r must be a string or an instance of class pyreally.R")
+        tag = self._gen_tag()
+        req = self._protocol.create_message(tag, r, body)
+        future = Future()
+        self._tracker.register_future(tag, CreateResponse, future)
+        self._raw_send(req)
+        logging.debug("CREATE request sent: %s", req)
+        return future
+
+    def delete(self, r):
+        if not self.is_online():
+            raise exceptions.DisconnectedException("Really is currently offline")
+        if not isinstance(r, (str, R)):
+            raise TypeError("r must be a string or an instance of class pyreally.R")
+        tag = self._gen_tag()
+        req = self._protocol.delete_message(tag, r)
+        future = Future()
+        self._tracker.register_future(tag, Response, future)
+        self._raw_send(req)
+        logging.debug("DELETE request sent: %s", req)
         return future

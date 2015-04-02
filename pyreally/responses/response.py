@@ -6,6 +6,9 @@ class Response(object):
     def __init__(self, raw):
         self._raw = raw
 
+    def get_raw_response(self):
+        return self._raw
+        
     @property
     def tag(self):
         return self._raw.get('tag')
