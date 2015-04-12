@@ -16,6 +16,7 @@ class ReallyTracker(object):
         self._protocol = protocol
         self._in_flight = {}
         self._subscriptions = defaultdict(list)
+        self._transient_subscriptions = {}
         self._running_evt = Event()
         self._heartbeat_timer = None
         self._heartbeat_period = heartbeat_period
@@ -41,7 +42,17 @@ class ReallyTracker(object):
     def _heartbeat_callback(self, data):
         logging.debug("Received pong %s", data)
 
+    def _handle_push(self, msg):
+        print("PUSH: %s" % msg)
+        # first, let's scan the transient subscriptions
+        # then, we scan the permanent subscriptions
+        pass
+
     def register_future(self, tag, response_klass, future):
+        t1 = time.time()
+        self._in_flight[tag] = (response_klass, t1, future)
+
+    def register_future_with_callback(self, tag, response_klass, future, callback):
         t1 = time.time()
         self._in_flight[tag] = (response_klass, t1, future)
 
@@ -54,22 +65,32 @@ class ReallyTracker(object):
                 data = self._really._websocket.recv()
                 logging.debug("Server: %s", data)
                 response = json.loads(data)
-                tag = response['tag']
-                if tag not in self._in_flight:
-                    logging.warning("Got a response for tag %s while not being tracked, ignoring", tag)
-                    logging.debug("stray response, not tracked %s", response)
+                if 'tag' in response:
+                    tag = response['tag']
+                    if tag not in self._in_flight:
+                        logging.warning("Got a response for tag %s while not being tracked, ignoring", tag)
+                        logging.debug("stray response, not tracked %s", response)
+                    else:
+                        t2 = time.time()
+                        klass, t1, future = self._in_flight.pop(tag)
+                        try:
+                            logging.debug("Request with tag %s fulfilled in %0.3fs", tag, t2 - t1)
+                            if 'error' in response and response['error'] != None:
+                                future.set_exception(parse_error(Error(response['error']), response.get('r')))
+                            future.set_result(klass(response))
+                        except Exception as e:
+                            logging.warning("Exception happened while calling the request callback: %s", e)
+                            future.set_exception(e)
+                            traceback.print_exc()
                 else:
-                    t2 = time.time()
-                    klass, t1, future = self._in_flight.pop(tag)
-                    try:
-                        logging.debug("Request with tag %s fulfilled in %0.3fs", tag, t2 - t1)
-                        if 'error' in response and response['error'] != None:
-                            future.set_exception(parse_error(Error(response['error']), response.get('r')))
-                        future.set_result(klass(response))
-                    except Exception as e:
-                        logging.warning("Exception happened while calling the request callback: %s", e)
-                        future.set_exception(e)
-                        traceback.print_exc()
+                    # No tag in response, let's see if this is a push message
+                    if 'evt' in response:
+                        # Yay, it is push, let's pass through listeners
+                        self._handle_push(response)
+                    else:
+                        # barf, it's probably an error message
+                        logging.warning("Server responded with un-tagged message: %s", response)
+
             except websocket.WebSocketConnectionClosedException as e:
                 logging.error("WebSocket closed during receive: %s", e)
                 self.request_termination()

@@ -1,16 +1,48 @@
+from .reallyobject import Update, Subscribe
+
+
 class ReallyClientProtocol(object):
     def __init__(self, really):
         self._really = really
 
-    def init_message(self):
+    @staticmethod
+    def _encode_update(update):
+        if not isinstance(update, (Update,)):
+            raise Exception("Update argument is not of type Update")
+        op = {
+            'op': update.op,
+            'key': update.key,
+            'value': update.value
+        }
+        if update.op_args:
+            op['opArgs'] = update.op_args
+        return op
+
+    @staticmethod
+    def _encode_subscribe(sub):
+        if not isinstance(sub, (Subscribe,)):
+            raise Exception("Update argument is not of type Update")
+        subscription = {
+            'r': str(sub.r),
+        }
+        if sub.rev:
+            subscription['rev'] = sub.rev
+
+        if sub.fields:
+            subscription['fields'] = sub.fields
+        return subscription
+
+    @staticmethod
+    def init_message(tag, access_token):
         init = {
-            "tag": self._really._gen_tag(),
+            "tag": tag,
             "cmd": "initialize",
-            "accessToken": self._really._access_token
+            "accessToken": access_token
         }
         return init
 
-    def get_message(self, tag, r, fields):
+    @staticmethod
+    def get_message(tag, r, fields):
         opts = {}
         if fields:
             opts['fields'] = fields
@@ -23,7 +55,8 @@ class ReallyClientProtocol(object):
             get['cmdOpts'] = opts
         return get
 
-    def query_message(self, tag, r, query=None, query_args=None, fields=None, ascending=None, limit=None, pagination_token=None, skip=None, include_total=None):
+    @staticmethod
+    def query_message(tag, r, query=None, query_args=None, fields=None, ascending=None, limit=None, pagination_token=None, skip=None, include_total=None):
         req = {
             'tag': tag,
             'r': str(r),
@@ -51,7 +84,8 @@ class ReallyClientProtocol(object):
             req['cmdOpts'] = opts
         return req
 
-    def create_message(self, tag, r, body):
+    @staticmethod
+    def create_message(tag, r, body):
         req = {
             'tag': tag,
             'cmd': 'create',
@@ -60,7 +94,8 @@ class ReallyClientProtocol(object):
         }
         return req
 
-    def delete_message(self, tag, r):
+    @staticmethod
+    def delete_message(tag, r):
         req = {
             'tag': tag,
             'r': str(r),
@@ -68,3 +103,37 @@ class ReallyClientProtocol(object):
         }
         return req
 
+    @staticmethod
+    def update_message(tag, r, updates, rev):
+        req = {
+            'tag': tag,
+            'cmd': 'update',
+            'r': str(r),
+            'rev': rev,
+            'body': {
+                'ops': map(ReallyClientProtocol._encode_update, updates)
+            }
+        }
+        return req
+
+    @staticmethod
+    def subscribe_message(tag, subs):
+        req = {
+            'tag': tag,
+            'cmd': 'subscribe',
+            'body': {
+                'subscriptions': map(ReallyClientProtocol._encode_subscribe, subs)
+            }
+        }
+        return req
+
+    @staticmethod
+    def unsubscribe_message(tag, subs):
+        req = {
+            'tag': tag,
+            'cmd': 'unsubscribe',
+            'body': {
+                'subscriptions': map(ReallyClientProtocol._encode_subscribe, subs)
+            }
+        }
+        return req

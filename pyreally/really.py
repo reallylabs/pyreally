@@ -13,8 +13,9 @@ import collections
 import socket
 import exceptions
 from .tracker import ReallyTracker
-from .responses import GetResponse, ReadResponse, CreateResponse, Response
+from .responses import GetResponse, ReadResponse, CreateResponse, Response, SubscribeResponse
 from .r import R
+from .reallyobject import Subscribe
 from concurrent.futures import Future
 
 REALLY_STATE_DISCONNECTED = "disconnected"
@@ -97,7 +98,7 @@ class Really(object):
             return
         self._websocket = websocket.create_connection(self._socket_url)
         self._fire('connect')
-        self._raw_send(self._protocol.init_message())
+        self._raw_send(self._protocol.init_message(self._gen_tag(), self._access_token))
         raw_response = self._websocket.recv()
         response = json.loads(raw_response)
         logging.debug("INITIALIZE RESPONSE: %s", response)
@@ -170,4 +171,47 @@ class Really(object):
         self._tracker.register_future(tag, Response, future)
         self._raw_send(req)
         logging.debug("DELETE request sent: %s", req)
+        return future
+
+    def update(self, r, ops, rev):
+        if not self.is_online():
+            raise exceptions.DisconnectedException("Really is currently offline")
+        if not isinstance(r, (str, R)):
+            raise TypeError("r must be a string or an instance of class pyreally.R")
+
+        tag = self._gen_tag()
+        req = self._protocol.update_message(tag, r, ops, rev)
+        future = Future()
+        self._tracker.register_future(tag, Response, future)
+        self._raw_send(req)
+        logging.debug("UPDATE request sent: %s", req)
+        return future
+
+    def subscribe(self, r, callback, rev=None, fields=None):
+        return self.multi_subscribe([Subscribe(r, rev, callback, fields)])
+        return future
+
+    def multi_subscribe(self, subs):
+        if not self.is_online():
+            raise exceptions.DisconnectedException("Really is currently offline")
+        tag = self._gen_tag()
+        req = self._protocol.subscribe_message(tag, subs)
+        future = Future()
+        self._tracker.register_future(tag, SubscribeResponse, future)
+        self._raw_send(req)
+        logging.debug("SUBSCRIBE request sent %s", req)
+        return future
+
+    # def unsubscribe(self, sub_id):
+
+
+    def multi_unsubscribe(self, sub_ids):
+        if not self.is_online():
+            raise exceptions.DisconnectedException("Really is currently offline")
+        tag = self._gen_tag()
+        req = self._protocol.unsubscribe_message(tag, sub_ids)
+        future = Future()
+        self._tracker.register_future(tag, SubscribeResponse, future)
+        self._raw_send(req)
+        logging.debug("SUBSCRIBE request sent %s", req)
         return future
